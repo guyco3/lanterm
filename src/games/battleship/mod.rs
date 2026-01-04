@@ -1,5 +1,5 @@
 // Battleship game module exports
-mod game;
+pub mod game;
 mod renderer;
 
 pub use game::BattleshipGame;

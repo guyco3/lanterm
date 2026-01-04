@@ -1,129 +1,125 @@
-
-use crate::core::renderer::GameRenderer;
-use crate::core::terminal::{TerminalContext, TerminalColor};
-use super::game::{BattleshipState, CellState};
+use crate::core::game::{LantermRenderer, NodeId};
+use super::game::{BattleshipState, CellState, Board};
+use ratatui::{
+    prelude::*,
+    widgets::{Block, Borders, Paragraph, Table, Row, Cell},
+    layout::{Layout, Constraint, Direction}
+};
 
 const BOARD_SIZE: usize = 10;
 
-pub struct BattleshipRenderer {
-    player_name: String,
-}
+#[derive(Debug)]
+pub struct BattleshipRenderer;
 
-impl GameRenderer<BattleshipState> for BattleshipRenderer {
-    fn new(player_name: String) -> Self {
-        Self { player_name }
-    }
+impl LantermRenderer<BattleshipState> for BattleshipRenderer {
+    fn render(frame: &mut Frame, state: &BattleshipState, local_node_id: NodeId) {
+        let chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([
+                Constraint::Length(3), // Header
+                Constraint::Length(3), // Status
+                Constraint::Min(0),    // Game area
+                Constraint::Length(3), // Footer
+            ])
+            .split(frame.area());
 
-    fn render(&self, state: &BattleshipState, ctx: &mut TerminalContext) {
-        // Much cleaner - no manual terminal handling!
-        ctx.print_line("🚢 ═══ BATTLESHIP ═══ 🚢");
-        ctx.print_line(&format!("Player: {}", self.player_name));
-        ctx.empty_line();
-        
-        // Show game status
-        if state.players.len() < 2 {
-            ctx.print_colored_line(&state.message, TerminalColor::Yellow);
-            ctx.print_line(&format!("Players: {}/2", state.players.len()));
-            ctx.flush();
-            return;
-        }
+        // Header
+        let header = Paragraph::new("🚢 ═══ BATTLESHIP v2 ═══ 🚢")
+            .block(Block::default().borders(Borders::ALL))
+            .style(Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))
+            .alignment(Alignment::Center);
+        frame.render_widget(header, chunks[0]);
 
-        // Show players
-        ctx.print_line(&format!("⚔️  {} vs {}", state.players[0], state.players[1]));
-        ctx.empty_line();
-
-        // Show current turn or winner
-        if state.finished {
-            if let Some(ref winner) = state.winner {
-                ctx.print_colored_line(&format!("🏆 {} is victorious!", winner), TerminalColor::Green);
+        // Status
+        let status_text = if state.players.len() < 2 {
+            format!("Waiting for players... ({}/2)", state.players.len())
+        } else if state.finished {
+            if let Some(winner) = state.winner {
+                if winner == local_node_id {
+                    "🏆 Victory! You sunk all enemy ships!".to_string()
+                } else {
+                    "💀 Defeat! Your fleet has been destroyed.".to_string()
+                }
+            } else {
+                "Game finished".to_string()
             }
         } else {
-            let current_player = &state.players[state.current_turn];
-            ctx.print_colored_line(&format!("🎯 {}'s turn to fire", current_player), TerminalColor::Yellow);
-        }
-        
-        ctx.empty_line();
-        ctx.print_line(&state.message);
-        ctx.empty_line();
+            if Some(local_node_id) == state.current_turn_node {
+                "🎯 Your turn! Press 'f' to fire!".to_string()
+            } else {
+                "⏳ Waiting for opponent...".to_string()
+            }
+        };
 
-        // Show both boards side by side
-        self.render_boards_side_by_side(state, ctx);
-        
-        if !state.finished {
-            ctx.empty_line();
-            ctx.print_line("💡 Enter coordinates to fire (row,col):");
-            ctx.print_line("   Example: '3,4' or '3 4' to fire at row 3, column 4");
+        let status = Paragraph::new(status_text)
+            .block(Block::default().borders(Borders::ALL).title("Status"))
+            .style(Style::default().fg(Color::Yellow));
+        frame.render_widget(status, chunks[1]);
+
+        // Game area - split into two boards
+        if state.players.len() == 2 {
+            let game_chunks = Layout::default()
+                .direction(Direction::Horizontal)
+                .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
+                .split(chunks[2]);
+
+            // My board (left side)
+            if let Some(my_board) = state.my_board(local_node_id) {
+                let my_board_widget = Self::build_board_widget(my_board, "My Fleet", true);
+                frame.render_widget(my_board_widget, game_chunks[0]);
+            }
+
+            // Enemy board (right side) - with fog of war
+            if let Some(enemy_board) = state.opponent_view(local_node_id) {
+                let enemy_board_widget = Self::build_board_widget(&enemy_board, "Enemy Waters", false);
+                frame.render_widget(enemy_board_widget, game_chunks[1]);
+            }
         }
 
-        ctx.flush();
+        // Footer with last action
+        let footer = Paragraph::new(state.last_action.clone())
+            .block(Block::default().borders(Borders::ALL).title("Battle Log"))
+            .style(Style::default().fg(Color::White));
+        frame.render_widget(footer, chunks[3]);
     }
 }
 
 impl BattleshipRenderer {
-    fn render_boards_side_by_side(&self, state: &BattleshipState, ctx: &mut TerminalContext) {
-        if state.player_boards.len() != 2 {
-            return;
-        }
+    fn build_board_widget<'a>(board: &'a Board, title: &'a str, show_ships: bool) -> Table<'a> {
+        let mut rows = vec![
+            Row::new((0..BOARD_SIZE).map(|i| Cell::from(format!("{}", i))).collect::<Vec<_>>())
+        ];
 
-        // Headers - much simpler with terminal context!
-        ctx.print(&format!("{:<25}", format!("🛡️  {}'s Fleet", state.players[0])));
-        ctx.print_line(&format!("🎯 {}'s Targets", state.players[1]));
-        ctx.empty_line();
-
-        // Column headers for both boards
-        ctx.print("   ");
-        for i in 0..BOARD_SIZE { ctx.print(&format!(" {} ", i)); }
-        ctx.print("     "); // Space between boards
-        ctx.print("   ");
-        for i in 0..BOARD_SIZE { ctx.print(&format!(" {} ", i)); }
-        ctx.empty_line();
-
-        // Render rows
-        for row in 0..BOARD_SIZE {
-            // Player 0's board (own ships visible)
-            ctx.print(&format!("{:2} ", row));
-            for col in 0..BOARD_SIZE {
-                let cell = state.player_boards[0].grid()[row][col];
-                self.render_cell(cell, false, ctx);
+        for (row_idx, row) in board.grid().iter().enumerate() {
+            let mut cells = vec![Cell::from(format!("{}", row_idx))];
+            
+            for &cell in row.iter() {
+                let cell_char = match cell {
+                    CellState::Empty => "~",
+                    CellState::Ship if show_ships => "■",
+                    CellState::Ship => "~", // Hide enemy ships
+                    CellState::Hit => "💥",
+                    CellState::Miss => "💦",
+                };
+                
+                let cell_style = match cell {
+                    CellState::Hit => Style::default().fg(Color::Red),
+                    CellState::Miss => Style::default().fg(Color::Blue),
+                    CellState::Ship if show_ships => Style::default().fg(Color::Green),
+                    _ => Style::default().fg(Color::Cyan),
+                };
+                
+                cells.push(Cell::from(cell_char).style(cell_style));
             }
             
-            ctx.print("     "); // Space between boards
-            
-            // Player 1's board from player 0's perspective (opponent view - ships hidden)
-            ctx.print(&format!("{:2} ", row));
-            for col in 0..BOARD_SIZE {
-                let cell = state.player_boards[1].grid()[row][col];
-                self.render_cell(cell, true, ctx);
-            }
-            ctx.empty_line();
+            rows.push(Row::new(cells));
         }
 
-        ctx.empty_line();
-        ctx.print_line("Legend: ■ Ship  ● Hit  · Miss  □ Water");
-    }
-
-    fn render_cell(&self, cell: CellState, hide_ships: bool, ctx: &mut TerminalContext) {
-        match cell {
-            CellState::Empty => {
-                if hide_ships {
-                    ctx.print("   ");
-                } else {
-                    ctx.print_colored(" □ ", TerminalColor::Blue);
-                }
-            },
-            CellState::Ship => {
-                if hide_ships {
-                    ctx.print("   ");
-                } else {
-                    ctx.print_colored(" ■ ", TerminalColor::White);
-                }
-            },
-            CellState::Hit => {
-                ctx.print_colored(" ● ", TerminalColor::Red);
-            },
-            CellState::Miss => {
-                ctx.print_colored(" · ", TerminalColor::Cyan);
-            },
-        }
+        Table::new(
+            rows,
+            std::iter::repeat(Constraint::Length(3)).take(BOARD_SIZE + 1).collect::<Vec<_>>()
+        )
+            .block(Block::default().borders(Borders::ALL).title(title))
+            .style(Style::default().fg(Color::White))
     }
 }

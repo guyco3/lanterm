@@ -1,34 +1,29 @@
-/// Core game interface for the lanterm framework
-use serde::Serialize;
+/// Core game interface for the lanterm v2 framework
+use serde::{Serialize, Deserialize};
+
+use iroh::EndpointId;
+
+// Type alias for better readability
+pub type NodeId = EndpointId;
 
 /// Main game trait that all games must implement
-/// This provides a standard interface for WebSocket-based multiplayer games
-pub trait WebSocketGame: Clone + Send + Sync + 'static {
-    /// Game state that gets serialized and sent to clients
-    type State: Clone + Send + Sync + Serialize + for<'de> serde::Deserialize<'de> + std::fmt::Debug + 'static;
+/// This provides a standard interface for P2P multiplayer games using Iroh and Ratatui
+pub trait LantermGame: Clone + Send + Sync + 'static {
+    /// Game state that gets serialized and synchronized across peers
+    type State: Serialize + for<'de> Deserialize<'de> + Clone + Send + Sync + 'static;
     
-    /// Input type that clients send to the server
-    type Input: Clone + Send + Sync + Serialize + for<'de> serde::Deserialize<'de> + std::fmt::Debug + 'static;
+    /// Input type that clients send to the host
+    type Input: Serialize + for<'de> Deserialize<'de> + Clone + Send + Sync + 'static;
     
-    // Metadata as associated constants - no factory needed!
-    const NAME: &'static str;
-    const DESCRIPTION: &'static str;
-    const MIN_PLAYERS: usize;
-    const MAX_PLAYERS: usize;
-    
-    /// Create a new game instance with initial state
+    /// Initialize the game state
     fn new_game() -> Self::State;
     
-    /// Handle player input and update game state
-    /// Returns a message to send back to the player
-    fn handle_input(input: &Self::Input, state: &mut Self::State, player_name: &str) -> String;
-    
-    /// Handle player joining the game - separate from input handling!
-    fn on_player_join(state: &mut Self::State, player_name: &str) -> String {
-        // Default implementation - games can override this
-        format!("{} joined the game!", player_name)
-    }
-    
-    /// Parse line input into game commands - game developer controls this
-    fn parse_line(line: &str) -> Option<Self::Input>;
+    /// Server-side: Update state based on player input
+    fn handle_input(state: &mut Self::State, input: Self::Input, player: NodeId);
+}
+
+/// Renderer trait for drawing game state using Ratatui
+pub trait LantermRenderer<S> {
+    /// Render the current state into the Ratatui Frame
+    fn render(frame: &mut ratatui::Frame, state: &S, local_node_id: NodeId);
 }

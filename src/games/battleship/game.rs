@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use crate::core::game::WebSocketGame;
+use crate::core::game::{LantermGame, NodeId};
 use rand::Rng;
 
 const BOARD_SIZE: usize = 10;
@@ -27,12 +27,12 @@ impl Board {
     }
 
     fn place_ship(&mut self, size: usize) {
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
 
         loop {
-            let row = rng.gen_range(0..BOARD_SIZE);
-            let col = rng.gen_range(0..BOARD_SIZE);
-            let direction = rng.gen::<bool>();
+            let row = rng.random_range(0..BOARD_SIZE);
+            let col = rng.random_range(0..BOARD_SIZE);
+            let direction = rng.random::<bool>();
 
             if self.can_place_ship(row, col, size, direction) {
                 for i in 0..size {
@@ -85,12 +85,13 @@ impl Board {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BattleshipState {
-    pub players: Vec<String>,
+    pub players: Vec<NodeId>,
     pub player_boards: Vec<Board>,
     pub current_turn: usize,
-    pub message: String,
+    pub current_turn_node: Option<NodeId>,
+    pub last_action: String,
     pub finished: bool,
-    pub winner: Option<String>,
+    pub winner: Option<NodeId>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -104,15 +105,16 @@ impl BattleshipState {
             players: Vec::new(),
             player_boards: Vec::new(),
             current_turn: 0,
-            message: "Welcome to Battleship! Waiting for 2 players...".to_string(),
+            current_turn_node: None,
+            last_action: "Welcome to Battleship! Waiting for 2 players...".to_string(),
             finished: false,
             winner: None,
         }
     }
 
-    pub fn add_player(&mut self, name: String) {
-        if !self.players.contains(&name) && self.players.len() < 2 {
-            self.players.push(name.clone());
+    pub fn add_player(&mut self, node_id: NodeId) {
+        if !self.players.contains(&node_id) && self.players.len() < 2 {
+            self.players.push(node_id);
             
             // Create and set up board for new player
             let mut board = Board::new();
@@ -125,131 +127,85 @@ impl BattleshipState {
             self.player_boards.push(board);
             
             if self.players.len() == 2 {
-                self.message = format!("🚢 Battle begins! {} fires first.", self.players[0]);
+                self.current_turn_node = Some(self.players[0]);
+                self.last_action = format!("🚢 Battle begins! Player {} fires first.", self.players[0]);
             } else {
-                self.message = format!("{} joined! Waiting for one more player...", name);
+                self.last_action = format!("Player {} joined! Waiting for one more player...", node_id);
             }
         }
     }
 
-    pub fn fire(&mut self, row: usize, col: usize, player_name: &str) -> Result<String, String> {
-        if self.players.len() < 2 {
-            return Err("Need 2 players to start battle!".to_string());
-        }
-
-        if self.finished {
-            return Err("Battle is over!".to_string());
-        }
-
-        // Validate it's the player's turn
-        let current_player = self.players.get(self.current_turn).unwrap();
-        if current_player != player_name {
-            return Err(format!("Not your turn! It's {}'s turn.", current_player));
-        }
-
-        // Validate coordinates
-        if row >= BOARD_SIZE || col >= BOARD_SIZE {
-            return Err(format!("Invalid coordinates! Use 0-{}", BOARD_SIZE - 1));
-        }
-
-        // Fire at opponent's board (opposite player)
-        let opponent_idx = 1 - self.current_turn;
-        let result = self.player_boards[opponent_idx].fire(row, col);
-        
-        let result_message = match result {
-            CellState::Hit => {
-                // Check if opponent is defeated
-                if self.player_boards[opponent_idx].is_game_over() {
-                    self.finished = true;
-                    self.winner = Some(player_name.to_string());
-                    format!("🎯 Direct hit! 🏆 {} wins the battle!", player_name)
-                } else {
-                    "🎯 Direct hit! Enemy ship damaged!".to_string()
-                }
-            },
-            CellState::Miss => "💦 Missed! Your shot splashed harmlessly.".to_string(),
-            _ => "🔄 Already fired here!".to_string(),
-        };
-
-        // Switch turns only if it was a miss or if game is over
-        if result == CellState::Miss || self.finished {
+    pub fn switch_turn(&mut self) {
+        if self.players.len() == 2 && !self.finished {
             self.current_turn = (self.current_turn + 1) % 2;
+            self.current_turn_node = Some(self.players[self.current_turn]);
         }
+    }
 
-        if !self.finished && result != CellState::Miss {
-            self.message = format!("{}  {} gets another turn!", result_message, player_name);
-        } else if !self.finished {
-            let next_player = &self.players[self.current_turn];
-            self.message = format!("{}  {}'s turn to fire!", result_message, next_player);
-        } else {
-            self.message = result_message;
-        }
+    pub fn my_board(&self, node_id: NodeId) -> Option<&Board> {
+        self.players.iter().position(|&id| id == node_id)
+            .and_then(|idx| self.player_boards.get(idx))
+    }
 
-        Ok(self.message.clone())
+    pub fn opponent_view(&self, node_id: NodeId) -> Option<Board> {
+        let opponent_idx = if self.players.get(0) == Some(&node_id) { 1 } else { 0 };
+        self.player_boards.get(opponent_idx).map(|board| {
+            let mut view = board.clone();
+            // Hide ships that haven't been hit
+            for row in view.grid.iter_mut() {
+                for cell in row.iter_mut() {
+                    if *cell == CellState::Ship {
+                        *cell = CellState::Empty;
+                    }
+                }
+            }
+            view
+        })
     }
 }
 
 /// Pure battleship game implementation
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct BattleshipGame;
 
-impl WebSocketGame for BattleshipGame {
+impl LantermGame for BattleshipGame {
     type State = BattleshipState;
     type Input = BattleshipInput;
-    
-    const NAME: &'static str = "Battleship";
-    const DESCRIPTION: &'static str = "Naval combat - sink your opponent's fleet!";
-    const MIN_PLAYERS: usize = 2;
-    const MAX_PLAYERS: usize = 2;
     
     fn new_game() -> Self::State {
         BattleshipState::new()
     }
     
-    fn handle_input(input: &Self::Input, state: &mut Self::State, player_name: &str) -> String {
+    fn handle_input(state: &mut Self::State, input: Self::Input, player_id: NodeId) {
         match input {
             BattleshipInput::Fire { row, col } => {
-                // Ensure player is in game before firing
-                if !state.players.contains(&player_name.to_string()) {
-                    return "You must join the game first!".to_string();
-                }
-                
-                match state.fire(*row, *col, player_name) {
-                    Ok(message) => message,
-                    Err(error) => error,
+                if Some(player_id) == state.current_turn_node {
+                    // Process the shot
+                    let opponent_idx = if state.players[0] == player_id { 1 } else { 0 };
+                    let result = state.player_boards[opponent_idx].fire(row, col);
+                    
+                    // Update last action message
+                    state.last_action = match result {
+                        CellState::Hit => {
+                            if state.player_boards[opponent_idx].is_game_over() {
+                                state.finished = true;
+                                state.winner = Some(player_id);
+                                format!("🎯 Direct hit! 🏆 Player {} wins!", player_id)
+                            } else {
+                                format!("🎯 Direct hit! Player {} damaged enemy ship!", player_id)
+                            }
+                        },
+                        CellState::Miss => format!("💦 Player {} missed!", player_id),
+                        _ => format!("Player {} fired at already targeted location", player_id),
+                    };
+                    
+                    // Switch turns if miss or game over
+                    if result == CellState::Miss || state.finished {
+                        state.switch_turn();
+                    }
                 }
             }
         }
-    }
-    
-    /// Explicit join handling - much cleaner than magic coordinates!
-    fn on_player_join(state: &mut Self::State, player_name: &str) -> String {
-        if !state.players.contains(&player_name.to_string()) {
-            state.add_player(player_name.to_string());
-            format!("{} joined the battle!", player_name)
-        } else {
-            "You're already in the battle!".to_string()
-        }
-    }
-    
-    /// Parse coordinates from line input like "3,4" or "3 4"
-    fn parse_line(line: &str) -> Option<Self::Input> {
-        let coords: Result<Vec<usize>, _> = line
-            .trim()
-            .split(|c: char| c == ',' || c.is_whitespace())
-            .filter(|s| !s.is_empty())
-            .map(|s| s.parse())
-            .collect();
-        
-        if let Ok(coords) = coords {
-            if coords.len() == 2 && coords[0] < 10 && coords[1] < 10 {
-                return Some(Self::Input::Fire { 
-                    row: coords[0], 
-                    col: coords[1] 
-                });
-            }
-        }
-        None
     }
 }
 
