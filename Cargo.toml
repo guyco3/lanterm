@@ -1,0 +1,22 @@
+[package]
+name = "lanterm"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "lanterm"
+path = "src/main.rs"
+
+[dependencies]
+tokio = { version = "1.36", features = ["full"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+async-trait = "0.1"
+crossterm = "0.27"
+rand = "0.8"
+clap = { version = "4.0", features = ["derive"] }
+dialoguer = "0.10"
+uuid = { version = "1.0", features = ["v4", "serde"] }
+chrono = { version = "0.4", features = ["serde"] }
+tokio-tungstenite = "0.21"
+futures-util = "0.3"
