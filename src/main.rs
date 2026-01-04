@@ -43,8 +43,10 @@ struct App {
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    // Initialize tracing
-    tracing_subscriber::fmt::init();
+    // Initialize tracing to stderr to avoid corrupting the TUI on stdout
+    tracing_subscriber::fmt()
+        .with_writer(std::io::stderr)
+        .init();
     
     // --- 1. SETUP TERMINAL ---
     enable_raw_mode()?;
@@ -77,27 +79,23 @@ async fn main() -> Result<()> {
         if app.state == AppState::HostLobby {
             if let Some(runner) = &mut app.game_runner {
                 // Try to accept a connection if we're the host
-                if runner.is_host && runner.game_state().players.len() < 2 {
-                    // Try a few times per tick to catch incoming connects
-                    for _ in 0..3 {
-                        if let Ok(result) = tokio::time::timeout(
-                            Duration::from_millis(5000),
-                            runner.accept_connection()
-                        ).await {
-                            if result.is_err() {
-                                // ignore transient accept errors
-                            }
-                            // Break to re-check player count after an attempt
-                            break;
-                        } else {
-                            // timeout - give UI a chance to draw
-                            break;
-                        }
-                    }
+                if runner.is_host {
+                    // accept_connection is internally time-bounded; call directly
+                    let _ = runner.accept_connection().await;
                 }
                 
-                if runner.game_state().players.len() == 2 {
+                if runner.game_state().players.len() == 2 || runner.runner_state() == &game_runner::GameRunnerState::Playing {
+                    tracing::info!("host sees 2 players; entering Playing");
                     app.state = AppState::Playing;
+                }
+            }
+        }
+
+        // Client: poll for state syncs each tick
+        if app.state == AppState::Playing {
+            if let Some(runner) = &mut app.game_runner {
+                if !runner.is_host {
+                    let _ = runner.poll_state().await;
                 }
             }
         }
@@ -293,6 +291,9 @@ async fn handle_coordinate_input(app: &mut App, key: event::KeyEvent) -> Result<
                         if row < 10 && col < 10 {
                             if let Some(runner) = &mut app.game_runner {
                                 runner.handle_input(BattleshipInput::Fire { row, col });
+                                if runner.is_host {
+                                    let _ = runner.send_state().await;
+                                }
                             }
                         }
                     }
