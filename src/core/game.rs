@@ -23,6 +23,12 @@ pub trait WebSocketGame: Clone + Send + Sync + 'static {
     /// Returns a message to send back to the player
     fn handle_input(input: &Self::Input, state: &mut Self::State, player_name: &str) -> String;
     
+    /// Handle player joining the game - separate from input handling!
+    fn on_player_join(state: &mut Self::State, player_name: &str) -> String {
+        // Default implementation - games can override this
+        format!("{} joined the game!", player_name)
+    }
+    
     /// Parse line input into game commands - game developer controls this
     fn parse_line(line: &str) -> Option<Self::Input>;
 }

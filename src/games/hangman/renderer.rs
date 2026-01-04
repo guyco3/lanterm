@@ -1,7 +1,6 @@
 /// Hangman-specific renderer - injected dependency
-use std::io::{stdout, Write};
-use crossterm::{QueueableCommand, cursor, terminal};
 use crate::core::renderer::GameRenderer;
+use crate::core::terminal::{TerminalContext, TerminalColor};
 use crate::games::hangman::HangmanState;
 
 /// Dependency-injected renderer for Hangman
@@ -15,48 +14,45 @@ impl GameRenderer<HangmanState> for HangmanRenderer {
     }
     
     /// Pure rendering function - no game logic
-    fn render(&self, state: &HangmanState) {
-        let mut out = stdout();
-
-        // Move cursor and clear with proper buffering
-        out.queue(cursor::MoveTo(0, 0)).unwrap();
-        out.queue(terminal::Clear(terminal::ClearType::All)).unwrap();
+    fn render(&self, state: &HangmanState, ctx: &mut TerminalContext) {
+        ctx.clear_screen();
         
-        // Render with carriage returns
-        writeln!(out, "🎩 HANGMAN (WebSocket) - Player: {}\r", self.player_name).unwrap();
-        writeln!(out, "══════════════════════════════════\r").unwrap();
-        writeln!(out, "\r").unwrap();
-        writeln!(out, "Word: {}\r", state.masked_word).unwrap();
-        writeln!(out, "\r").unwrap();
-        writeln!(out, "Tries left: {} {}\r", state.remaining_tries, "❤".repeat(state.remaining_tries as usize)).unwrap();
+        // Header
+        ctx.print_colored(&format!("🎩 HANGMAN (WebSocket) - Player: {}", self.player_name), TerminalColor::Cyan);
+        ctx.print_line("══════════════════════════════════");
+        ctx.print_line("");
+        
+        // Game state
+        ctx.print_line(&format!("Word: {}", state.masked_word));
+        ctx.print_line("");
+        ctx.print_line(&format!("Tries left: {} {}", state.remaining_tries, "❤".repeat(state.remaining_tries as usize)));
         
         if !state.guessed.is_empty() {
-            println!("Correct: {}", state.guessed.iter().collect::<String>());
+            ctx.print_colored(&format!("Correct: {}", state.guessed.iter().collect::<String>()), TerminalColor::Green);
         }
         if !state.wrong.is_empty() {
-            println!("Wrong: {}", state.wrong.iter().collect::<String>());
+            ctx.print_colored(&format!("Wrong: {}", state.wrong.iter().collect::<String>()), TerminalColor::Red);
         }
         
-        writeln!(out, "\r").unwrap();
-        writeln!(out, "Players: {}\r", state.players.join(", ")).unwrap();
+        ctx.print_line("");
+        ctx.print_line(&format!("Players: {}", state.players.join(", ")));
         
         if state.players.len() >= 2 && !state.finished {
-            writeln!(out, "Current turn: {}\r", state.players.get(state.current_turn).unwrap_or(&"?".to_string())).unwrap();
+            ctx.print_line(&format!("Current turn: {}", state.players.get(state.current_turn).unwrap_or(&"?".to_string())));
         }
         
-        writeln!(out, "\r").unwrap();
-        writeln!(out, "📢 {}\r", state.message).unwrap();
-        writeln!(out, "\r").unwrap();
+        ctx.print_line("");
+        ctx.print_colored(&format!("📢 {}", state.message), TerminalColor::Yellow);
+        ctx.print_line("");
         
         if !state.finished && state.players.len() >= 2 {
-            writeln!(out, "💡 Type a letter to guess, or 'q' to quit\r").unwrap();
+            ctx.print_line("💡 Type a letter to guess, or 'q' to quit");
         } else if state.finished {
-            writeln!(out, "🏁 Game over! Press 'q' to quit\r").unwrap();
+            ctx.print_line("🏁 Game over! Press 'q' to quit");
         } else {
-            writeln!(out, "⏳ Waiting for more players...\r").unwrap();
+            ctx.print_line("⏳ Waiting for more players...");
         }
         
-        // Flush all output at once
-        out.flush().unwrap();
+        ctx.flush();
     }
 }

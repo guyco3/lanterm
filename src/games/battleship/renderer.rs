@@ -1,8 +1,6 @@
 
-use crossterm::{QueueableCommand, cursor, terminal};
-use std::io::{stdout, Write};
-
 use crate::core::renderer::GameRenderer;
+use crate::core::terminal::{TerminalContext, TerminalColor};
 use super::game::{BattleshipState, CellState};
 
 const BOARD_SIZE: usize = 10;
@@ -16,134 +14,115 @@ impl GameRenderer<BattleshipState> for BattleshipRenderer {
         Self { player_name }
     }
 
-    fn render(&self, state: &BattleshipState) {
-        let mut out = stdout();
-
-        // 1. Move cursor to 0,0 and clear instead of raw ANSI
-        out.queue(cursor::MoveTo(0, 0)).unwrap();
-        out.queue(terminal::Clear(terminal::ClearType::All)).unwrap();
-        
-        // 2. Use writeln! with carriage returns
-        writeln!(out, "🚢 ═══ BATTLESHIP ═══ 🚢\r").unwrap();
-        writeln!(out, "Player: {}\r", self.player_name).unwrap();
-        writeln!(out, "\r").unwrap();
+    fn render(&self, state: &BattleshipState, ctx: &mut TerminalContext) {
+        // Much cleaner - no manual terminal handling!
+        ctx.print_line("🚢 ═══ BATTLESHIP ═══ 🚢");
+        ctx.print_line(&format!("Player: {}", self.player_name));
+        ctx.empty_line();
         
         // Show game status
         if state.players.len() < 2 {
-            writeln!(out, "⏳ {}\r", state.message).unwrap();
-            writeln!(out, "Players: {}/2\r", state.players.len()).unwrap();
-            out.flush().unwrap();
+            ctx.print_colored_line(&state.message, TerminalColor::Yellow);
+            ctx.print_line(&format!("Players: {}/2", state.players.len()));
+            ctx.flush();
             return;
         }
 
         // Show players
-        writeln!(out, "⚔️  {} vs {}\r", state.players[0], state.players[1]).unwrap();
-        writeln!(out, "\r").unwrap();
+        ctx.print_line(&format!("⚔️  {} vs {}", state.players[0], state.players[1]));
+        ctx.empty_line();
 
         // Show current turn or winner
         if state.finished {
             if let Some(ref winner) = state.winner {
-                out.queue(crossterm::style::SetForegroundColor(crossterm::style::Color::Green)).unwrap();
-                writeln!(out, "🏆 {} is victorious!\r", winner).unwrap();
-                out.queue(crossterm::style::ResetColor).unwrap();
+                ctx.print_colored_line(&format!("🏆 {} is victorious!", winner), TerminalColor::Green);
             }
         } else {
             let current_player = &state.players[state.current_turn];
-            out.queue(crossterm::style::SetForegroundColor(crossterm::style::Color::Yellow)).unwrap();
-            writeln!(out, "🎯 {}'s turn to fire\r", current_player).unwrap();
-            out.queue(crossterm::style::ResetColor).unwrap();
+            ctx.print_colored_line(&format!("🎯 {}'s turn to fire", current_player), TerminalColor::Yellow);
         }
         
-        writeln!(out, "\r").unwrap();
-        writeln!(out, "{}\r", state.message).unwrap();
-        writeln!(out, "\r").unwrap();
+        ctx.empty_line();
+        ctx.print_line(&state.message);
+        ctx.empty_line();
 
         // Show both boards side by side
-        self.render_boards_side_by_side(state, &mut out);
+        self.render_boards_side_by_side(state, ctx);
         
         if !state.finished {
-            writeln!(out, "\r").unwrap();
-            writeln!(out, "💡 Enter coordinates to fire (row,col):\r").unwrap();
-            writeln!(out, "   Example: '3,4' or '3 4' to fire at row 3, column 4\r").unwrap();
+            ctx.empty_line();
+            ctx.print_line("💡 Enter coordinates to fire (row,col):");
+            ctx.print_line("   Example: '3,4' or '3 4' to fire at row 3, column 4");
         }
 
-        // 3. Flush everything at once to prevent flickering
-        out.flush().unwrap();
+        ctx.flush();
     }
 }
 
 impl BattleshipRenderer {
-    fn render_boards_side_by_side(&self, state: &BattleshipState, out: &mut std::io::Stdout) {
+    fn render_boards_side_by_side(&self, state: &BattleshipState, ctx: &mut TerminalContext) {
         if state.player_boards.len() != 2 {
             return;
         }
 
-        // Headers
-        write!(out, "{:<25}", format!("🛡️  {}'s Fleet", state.players[0])).unwrap();
-        writeln!(out, "🎯 {}'s Targets\r", state.players[1]).unwrap();
-        writeln!(out, "\r").unwrap();
+        // Headers - much simpler with terminal context!
+        ctx.print(&format!("{:<25}", format!("🛡️  {}'s Fleet", state.players[0])));
+        ctx.print_line(&format!("🎯 {}'s Targets", state.players[1]));
+        ctx.empty_line();
 
         // Column headers for both boards
-        write!(out, "   ").unwrap();
-        for i in 0..BOARD_SIZE { write!(out, " {} ", i).unwrap(); }
-        write!(out, "     ").unwrap(); // Space between boards
-        write!(out, "   ").unwrap();
-        for i in 0..BOARD_SIZE { write!(out, " {} ", i).unwrap(); }
-        writeln!(out, "\r").unwrap();
+        ctx.print("   ");
+        for i in 0..BOARD_SIZE { ctx.print(&format!(" {} ", i)); }
+        ctx.print("     "); // Space between boards
+        ctx.print("   ");
+        for i in 0..BOARD_SIZE { ctx.print(&format!(" {} ", i)); }
+        ctx.empty_line();
 
         // Render rows
         for row in 0..BOARD_SIZE {
             // Player 0's board (own ships visible)
-            write!(out, "{:2} ", row).unwrap();
+            ctx.print(&format!("{:2} ", row));
             for col in 0..BOARD_SIZE {
                 let cell = state.player_boards[0].grid()[row][col];
-                self.render_cell(cell, false, out);
+                self.render_cell(cell, false, ctx);
             }
             
-            write!(out, "     ").unwrap(); // Space between boards
+            ctx.print("     "); // Space between boards
             
             // Player 1's board from player 0's perspective (opponent view - ships hidden)
-            write!(out, "{:2} ", row).unwrap();
+            ctx.print(&format!("{:2} ", row));
             for col in 0..BOARD_SIZE {
                 let cell = state.player_boards[1].grid()[row][col];
-                self.render_cell(cell, true, out);
+                self.render_cell(cell, true, ctx);
             }
-            writeln!(out, "\r").unwrap();
+            ctx.empty_line();
         }
 
-        writeln!(out, "\r").unwrap();
-        writeln!(out, "Legend: ■ Ship  ● Hit  · Miss  □ Water\r").unwrap();
+        ctx.empty_line();
+        ctx.print_line("Legend: ■ Ship  ● Hit  · Miss  □ Water");
     }
 
-    fn render_cell(&self, cell: CellState, hide_ships: bool, out: &mut std::io::Stdout) {
+    fn render_cell(&self, cell: CellState, hide_ships: bool, ctx: &mut TerminalContext) {
         match cell {
             CellState::Empty => {
                 if hide_ships {
-                    write!(out, "   ").unwrap();
+                    ctx.print("   ");
                 } else {
-                    out.queue(crossterm::style::SetForegroundColor(crossterm::style::Color::Blue)).unwrap();
-                    write!(out, " □ ").unwrap();
-                    out.queue(crossterm::style::ResetColor).unwrap();
+                    ctx.print_colored(" □ ", TerminalColor::Blue);
                 }
             },
             CellState::Ship => {
                 if hide_ships {
-                    write!(out, "   ").unwrap();
+                    ctx.print("   ");
                 } else {
-                    out.queue(crossterm::style::SetForegroundColor(crossterm::style::Color::White)).unwrap();
-                    write!(out, " ■ ").unwrap();
-                    out.queue(crossterm::style::ResetColor).unwrap();
+                    ctx.print_colored(" ■ ", TerminalColor::White);
                 }
             },
             CellState::Hit => {
-                out.queue(crossterm::style::SetForegroundColor(crossterm::style::Color::Red)).unwrap();
-                write!(out, " ● ").unwrap();
-                out.queue(crossterm::style::ResetColor).unwrap();
+                ctx.print_colored(" ● ", TerminalColor::Red);
             },
             CellState::Miss => {
-                out.queue(crossterm::style::SetForegroundColor(crossterm::style::Color::Cyan)).unwrap();
-                write!(out, " · ").unwrap();
-                out.queue(crossterm::style::ResetColor).unwrap();
+                ctx.print_colored(" · ", TerminalColor::Cyan);
             },
         }
     }

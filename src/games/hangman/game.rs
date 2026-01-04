@@ -145,13 +145,14 @@ impl WebSocketGame for HangmanGame {
         HangmanState::new(random_word.to_string())
     }
     
+    fn on_player_join(state: &mut Self::State, player_name: &str) -> String {
+        state.add_player(player_name.to_string());
+        format!("👋 {} joined the hangman game!", player_name)
+    }
+    
     fn handle_input(input: &Self::Input, state: &mut Self::State, player_name: &str) -> String {
         match input {
             HangmanInput::Guess(letter) => {
-                if !state.players.contains(&player_name.to_string()) {
-                    state.add_player(player_name.to_string());
-                }
-                
                 match state.guess(*letter, player_name) {
                     Ok(correct) => {
                         if correct {

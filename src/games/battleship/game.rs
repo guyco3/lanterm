@@ -207,16 +207,11 @@ impl WebSocketGame for BattleshipGame {
     }
     
     fn handle_input(input: &Self::Input, state: &mut Self::State, player_name: &str) -> String {
-        // Add player if not already in game
-        if !state.players.contains(&player_name.to_string()) {
-            state.add_player(player_name.to_string());
-        }
-        
         match input {
             BattleshipInput::Fire { row, col } => {
-                // Check for dummy join coordinates (99,99) - just return join message
-                if *row == 99 && *col == 99 {
-                    return format!("{} ready for battle!", player_name);
+                // Ensure player is in game before firing
+                if !state.players.contains(&player_name.to_string()) {
+                    return "You must join the game first!".to_string();
                 }
                 
                 match state.fire(*row, *col, player_name) {
@@ -224,6 +219,16 @@ impl WebSocketGame for BattleshipGame {
                     Err(error) => error,
                 }
             }
+        }
+    }
+    
+    /// Explicit join handling - much cleaner than magic coordinates!
+    fn on_player_join(state: &mut Self::State, player_name: &str) -> String {
+        if !state.players.contains(&player_name.to_string()) {
+            state.add_player(player_name.to_string());
+            format!("{} joined the battle!", player_name)
+        } else {
+            "You're already in the battle!".to_string()
         }
     }
     

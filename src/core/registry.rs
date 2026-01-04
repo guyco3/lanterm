@@ -101,8 +101,9 @@ where
         client.connect_and_play::<G::State, G::Input, _, _>(
             &server_url,
             move |state: &G::State| {
-                // Auto-injected renderer handles all UI
-                renderer.render(state);
+                // Auto-injected renderer handles all UI with TerminalContext
+                let mut ctx = crate::core::terminal::TerminalContext::new();
+                renderer.render(state, &mut ctx);
             },
             |line: &str| -> Option<G::Input> {
                 // Game developer controls input parsing
