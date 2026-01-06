@@ -1,58 +1,29 @@
-use serde::{Serialize, Deserialize};
+use ratatui::Frame;
+use serde::{Serialize, de::DeserializeOwned};
 use std::time::Duration;
-use iroh::EndpointId;
-use tokio::sync::mpsc;
+use tokio::sync::mpsc::UnboundedSender;
 
-pub type NodeId = EndpointId;
-
-pub trait LantermGame: Clone + Send + Sync + 'static {
-    type State: Serialize + for<'de> Deserialize<'de> + Clone + Send + Sync + 'static;
-    type Input: Serialize + for<'de> Deserialize<'de> + Clone + Send + Sync + 'static;
-    
-    fn new_game() -> Self::State;
-
-    /// Parse a text command from console input into game input
-    fn parse_command(cmd: &str) -> Option<Self::Input>;
-
-    /// Handle input from either local console (from local_player_id) or network (from other players).
-    /// Use `player == local_player_id` to determine if input is from local console.
-    fn handle_input(state: &mut Self::State, input: Self::Input, player: NodeId, ctx: &LantermContext<Self::Input>);
-    
-    fn handle_player_joined(_state: &mut Self::State, _player: NodeId, _ctx: &LantermContext<Self::Input>) {}
-    fn handle_player_left(_state: &mut Self::State, _player: NodeId, _ctx: &LantermContext<Self::Input>) {}
-    fn on_tick(_state: &mut Self::State, _ctx: &LantermContext<Self::Input>) {}
-    fn tick_rate() -> Option<Duration> { None }
+pub struct Context<M> {
+    pub(crate) tx: UnboundedSender<M>,
 }
 
-pub trait LantermRenderer<S> {
-    /// render now takes `current_input` so the UI can show what the user is typing.
-    /// Returns cursor position (x, y) if input should show a cursor, None otherwise.
-    fn render(frame: &mut ratatui::Frame, state: &S, local_node_id: NodeId, current_input: &str) -> Option<(u16, u16)>;
-}
-
-pub(crate) enum EngineCommand<I> {
-    SendInput(I),
-    SetTimer(String, Duration),
-}
-
-pub struct LantermContext<I> {
-    pub local_node_id: NodeId,
-    pub(crate) cmd_tx: mpsc::Sender<EngineCommand<I>>, 
-    pub(crate) _input_type: std::marker::PhantomData<I>,
-}
-
-impl<I: Serialize + Send + 'static> LantermContext<I> {
-    pub async fn send_input(&self, input: I) -> anyhow::Result<()> {
-        self.cmd_tx.send(EngineCommand::SendInput(input)).await
-            .map_err(|_| anyhow::anyhow!("Engine disconnected"))
+impl<M> Context<M> {
+    pub fn send_network_event(&self, msg: M) {
+        let _ = self.tx.send(msg);
     }
+}
 
-    pub fn set_timer(&self, name: &str, duration: Duration) {
-        let tx = self.cmd_tx.clone();
-        let name = name.to_string();
-        tokio::spawn(async move {
-            tokio::time::sleep(duration).await;
-            let _ = tx.send(EngineCommand::SetTimer(name, duration)).await;
-        });
+pub trait Game: Send + Sync + 'static {
+    type Message: Serialize + DeserializeOwned + Send + Clone + std::fmt::Debug;
+
+    // User-implemented logic hooks
+    fn handle_input(&mut self, event: crossterm::event::KeyEvent, ctx: &Context<Self::Message>);
+    fn handle_network(&mut self, msg: Self::Message, ctx: &Context<Self::Message>);
+    fn on_tick(&mut self, dt: u32, ctx: &Context<Self::Message>);
+    fn render(&self, frame: &mut Frame);
+
+    // Optional: Defaults to 60fps
+    fn tick_rate(&self) -> Option<Duration> {
+        Some(Duration::from_millis(16))
     }
 }

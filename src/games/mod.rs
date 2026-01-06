@@ -1,1 +1,3 @@
-pub mod battleship;
+pub mod rand_num;
+
+pub use rand_num::{GuessMsg, NumberGame};

@@ -123,5 +123,38 @@ pub fn create_default_registry() -> GameRegistry {
 - **Client Library**: Terminal UI helpers and networking
 - **CLI Interface**: User-friendly game selection and management
 
+┌─────────────────────────────────────────────────────┐
+│ main.rs: Creates Engine + Injects Game Type        │
+│   engine.run::<Battleship, BattleshipRenderer>()   │
+└────────────────────┬────────────────────────────────┘
+                     │
+                     ▼
+┌─────────────────────────────────────────────────────┐
+│ runner.rs: Main Event Loop (tokio::select!)        │
+│                                                     │
+│  ┌──────────────┐   ┌──────────────┐              │
+│  │ Network Rx   │   │  User Input  │              │
+│  │ (from peer)  │   │  (keyboard)  │              │
+│  └──────┬───────┘   └──────┬───────┘              │
+│         │                   │                       │
+│         ├───────┐  ┌────────┤                      │
+│         ▼       ▼  ▼        ▼                       │
+│    ┌────────────────────────────┐                  │
+│    │  G::handle_input()         │                  │
+│    │  (Game trait method)       │                  │
+│    └────────────┬───────────────┘                  │
+│                 │                                   │
+│                 ▼                                   │
+│    Updates local game state                        │
+│    (state lives in runner.rs)                      │
+│                 │                                   │
+│                 ▼                                   │
+│    ┌────────────────────────────┐                  │
+│    │  R::render()               │                  │
+│    │  (Renderer draws UI)       │                  │
+│    └────────────────────────────┘                  │
+└─────────────────────────────────────────────────────┘
+
 ## Contributing
 See `games/` for examples. The framework handles all the networking and client management - you just focus on your game logic!
+
