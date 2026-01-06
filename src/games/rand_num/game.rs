@@ -1,6 +1,7 @@
 use crate::{Context, Game};
 use ratatui::widgets::Paragraph;
 use serde::{Deserialize, Serialize};
+use crossterm::event::KeyCode;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum GuessAction {
@@ -28,7 +29,6 @@ impl Game for NumberGame {
     type State = NumberState;
 
     fn handle_input(&mut self, event: crossterm::event::KeyEvent, ctx: &Context<Self::Action>) {
-        use crossterm::event::KeyCode;
         match event.code {
             KeyCode::Char(c) if c.is_digit(10) => self.local_input.push(c),
             KeyCode::Backspace => { self.local_input.pop(); },
