@@ -1,3 +1,2 @@
 pub mod rand_num;
-
-pub use rand_num::{GuessMsg, NumberGame};
+pub use rand_num::{NumberGame, GuessAction};

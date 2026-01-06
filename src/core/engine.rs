@@ -1,66 +1,95 @@
-use crate::core::network::NetworkManager;
+use crate::core::network::{NetworkManager, InternalMsg, SyncPacket};
 use crate::{Context, Game};
 use anyhow::Result;
 use ratatui::DefaultTerminal;
-use std::time::Instant;
+use std::time::{Instant, Duration};
+use crossterm::event::{self, Event, KeyCode};
 
 pub struct Engine<G: Game> {
     game: G,
-    network: NetworkManager<G::Message>,
+    network: NetworkManager<InternalMsg<G::Action, G::State>>,
+    is_host: bool,
+    state: G::State,
 }
 
 impl<G: Game> Engine<G> {
-    pub fn new(game: G, network: NetworkManager<G::Message>) -> Self {
-        Self { game, network }
+    pub fn new(game: G, network: NetworkManager<InternalMsg<G::Action, G::State>>, is_host: bool) -> Self {
+        Self { game, network, is_host, state: G::State::default() }
     }
 
     pub async fn run(mut self, mut terminal: DefaultTerminal) -> Result<()> {
         let mut last_tick = Instant::now();
-        
-        // set up channels for outgoing + incoming network messages
-        let (outbox_tx, mut outbox_rx) = tokio::sync::mpsc::unbounded_channel::<G::Message>();
-        let ctx = Context { tx: outbox_tx };
+        let mut sequence_counter: u64 = 0;
+        let mut last_seen_seq: u64 = 0;
+
+        let (action_tx, mut action_rx) = tokio::sync::mpsc::unbounded_channel::<G::Action>();
+        let ctx = Context { tx: action_tx };
 
         loop {
-            terminal.draw(|f| self.game.render(f))?;
+            terminal.draw(|f| self.game.render(f, &self.state))?;
 
-            // INPUT (Non-blocking)
-            if crossterm::event::poll(std::time::Duration::from_millis(0))? {
-                if let crossterm::event::Event::Key(key) = crossterm::event::read()? {
-                    if key.code == crossterm::event::KeyCode::Esc { break; }
+            // Input Handling (Non-blocking)
+            if event::poll(Duration::from_millis(0))? {
+                if let Event::Key(key) = event::read()? {
+                    if key.code == KeyCode::Esc { break; }
                     self.game.handle_input(key, &ctx);
                 }
             }
 
-            // Always wake the loop periodically so input keeps getting polled even when
-            // the game does not use ticks. For games without ticks we use a small sleep
-            // to avoid a tight loop while still letting input through.
-            let tick_rate = self.game.tick_rate();
-            let tick_sleep = tick_rate.unwrap_or(std::time::Duration::from_millis(16));
-            let tick_fused = tokio::time::sleep(tick_sleep);
+            let tick_rate = self.game.tick_rate().unwrap_or(Duration::from_millis(16));
+            let conn = self.network.conn.clone();
 
             tokio::select! {
-                // 2. SEND: If the user called ctx.send_network_event(), handle it here
-                Some(msg_to_send) = outbox_rx.recv() => {
-                    self.network.send_msg(msg_to_send).await?;
+                // 1. LOCAL ACTIONS
+                Some(action) = action_rx.recv() => {
+                    if self.is_host {
+                        self.game.handle_action(action, &mut self.state);
+                    } else {
+                        self.network.send_reliable(InternalMsg::Action(action)).await?;
+                    }
                 }
 
-                // 3. RECEIVE: If a message comes from the other player
-                Ok(incoming_msg) = self.network.next_msg() => {
-                    self.game.handle_network(incoming_msg, &ctx);
+                // 2. RELIABLE INBOUND (Host receives actions)
+                Ok(msg) = self.network.next_reliable() => {
+                    if let InternalMsg::Action(a) = msg {
+                        if self.is_host {
+                            self.game.handle_action(a, &mut self.state);
+                        }
+                    }
                 }
 
-                // 4. TICK: Game heartbeat
-                _ = tick_fused => {
-                    if tick_rate.is_some() {
-                        let dt = last_tick.elapsed().as_millis() as u32;
-                        last_tick = Instant::now();
-                        self.game.on_tick(dt, &ctx);
+                // 3. UNRELIABLE INBOUND (Client receives state syncs)
+                Ok(msg) = async move {
+                    let bytes = conn.read_datagram().await?;
+                    let msg = postcard::from_bytes(&bytes)?;
+                    Ok::<InternalMsg<G::Action, G::State>, anyhow::Error>(msg)
+                } => {
+                    if let InternalMsg::Sync(packet) = msg {
+                        if !self.is_host && packet.seq > last_seen_seq {
+                            self.state = packet.state;
+                            last_seen_seq = packet.seq;
+                        }
+                    }
+                }
+
+                // 4. HEARTBEAT & BROADCAST
+                _ = tokio::time::sleep(tick_rate) => {
+                    let dt = last_tick.elapsed().as_millis() as u32;
+                    last_tick = Instant::now();
+
+                    if self.is_host {
+                        self.game.on_tick(dt, &mut self.state);
+                        
+                        sequence_counter += 1;
+                        let packet = SyncPacket {
+                            seq: sequence_counter,
+                            state: self.state.clone(),
+                        };
+                        let _ = self.network.send_unreliable(InternalMsg::Sync(packet));
                     }
                 }
             }
         }
-        
         ratatui::restore();
         Ok(())
     }

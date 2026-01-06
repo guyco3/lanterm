@@ -1,103 +1,65 @@
 use crate::{Context, Game};
-use rand::Rng;
 use ratatui::widgets::Paragraph;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum GuessMsg {
-    PlayerGuessed(u32),   
-    Feedback(String),      
-    GameOver(u32),
+pub enum GuessAction {
+    Submit(u32),
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct NumberState {
+    pub message: String,
+    pub over: bool,
 }
 
 pub struct NumberGame {
-    is_host: bool,
-    secret_number: u32,
-    last_feedback: String,
-    current_input: String,
-    game_over: bool,
+    local_input: String,
 }
 
 impl NumberGame {
-    pub fn new(is_host: bool) -> Self {
-        let mut rng = rand::rng();
-        let secret = if is_host { rng.random_range(1..100) } else { 0 };
-        Self {
-            is_host,
-            secret_number: secret,
-            last_feedback: if is_host { "Waiting for guess...".into() } else { "Enter a guess!".into() },
-            current_input: String::new(),
-            game_over: false,
-        }
+    pub fn new() -> Self {
+        Self { local_input: String::new() }
     }
 }
 
 impl Game for NumberGame {
-    type Message = GuessMsg;
+    type Action = GuessAction;
+    type State = NumberState;
 
-    // We don't need a tick for a guessing game!
-    fn tick_rate(&self) -> Option<std::time::Duration> { None }
-    fn on_tick(&mut self, _dt: u32, _ctx: &Context<Self::Message>) {}
-
-    fn handle_input(&mut self, event: crossterm::event::KeyEvent, ctx: &Context<Self::Message>) {
-        if self.game_over { return; }
-
+    fn handle_input(&mut self, event: crossterm::event::KeyEvent, ctx: &Context<Self::Action>) {
+        use crossterm::event::KeyCode;
         match event.code {
-            crossterm::event::KeyCode::Char(c) => {
-                if c.is_ascii_digit() {
-                    self.current_input.push(c);
+            KeyCode::Char(c) if c.is_digit(10) => self.local_input.push(c),
+            KeyCode::Backspace => { self.local_input.pop(); },
+            KeyCode::Enter => {
+                if let Ok(val) = self.local_input.parse() {
+                    ctx.send_action(GuessAction::Submit(val));
                 }
-            }
-            crossterm::event::KeyCode::Backspace => {
-                self.current_input.pop();
-            }
-            crossterm::event::KeyCode::Enter => {
-                if let Ok(guess) = self.current_input.parse::<u32>() {
-                    if !self.is_host {
-                        // CLIENT: Send the guess to the host
-                        ctx.send_network_event(GuessMsg::PlayerGuessed(guess));
-                        self.last_feedback = format!("You guessed {}. Waiting for feedback...", guess);
-                    }
-                }
-                self.current_input.clear();
+                self.local_input.clear();
             }
             _ => {}
         }
     }
 
-    fn handle_network(&mut self, msg: Self::Message, ctx: &Context<Self::Message>) {
-        match msg {
-            GuessMsg::PlayerGuessed(guess) => {
-                if self.is_host {
-                    // HOST: Check the guess and send feedback
-                    println!("Client guessed: {}", guess);
-                    if guess < self.secret_number {
-                        ctx.send_network_event(GuessMsg::Feedback("Too low!".into()));
-                    } else if guess > self.secret_number {
-                        ctx.send_network_event(GuessMsg::Feedback("Too high!".into()));
-                    } else {
-                        ctx.send_network_event(GuessMsg::GameOver(guess));
-                        self.game_over = true;
-                        self.last_feedback = format!("Player won! Number was {}", guess);
-                    }
+    fn handle_action(&self, action: Self::Action, state: &mut Self::State) {
+        match action {
+            GuessAction::Submit(val) => {
+                state.message = format!("Last guess was: {}", val);
+                if val == 42 { // Simple win condition
+                    state.over = true;
+                    state.message = "42! You win!".into();
                 }
-            }
-            GuessMsg::Feedback(text) => {
-                self.last_feedback = text;
-            }
-            GuessMsg::GameOver(num) => {
-                self.game_over = true;
-                self.last_feedback = format!("Correct! The number was {}", num);
             }
         }
     }
 
-    fn render(&self, frame: &mut ratatui::Frame) {
+    fn on_tick(&self, _dt: u32, _state: &mut Self::State) {}
+
+    fn render(&self, frame: &mut ratatui::Frame, state: &Self::State) {
         let text = format!(
-            "{}\n\nInput (0-99, Backspace to erase, Enter to send, Esc to quit):\n{}\n\nFeedback:\n{}", 
-            if self.is_host { "HOST MODE - Waiting for guess..." } else { "CLIENT MODE - Type digits (0-99)" },
-            self.current_input,
-            self.last_feedback
+            "--- SHARED WORLD ---\nStatus: {}\nYour Typing: {}\nGame Over: {}",
+            state.message, self.local_input, state.over
         );
         frame.render_widget(Paragraph::new(text), frame.area());
     }

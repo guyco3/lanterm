@@ -1,3 +1,2 @@
 pub mod game;
-
-pub use game::{GuessMsg, NumberGame};
+pub use game::{NumberGame, NumberState, GuessAction};
