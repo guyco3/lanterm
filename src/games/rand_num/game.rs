@@ -16,11 +16,16 @@ pub struct NumberState {
 
 pub struct NumberGame {
     local_input: String,
+    #[allow(dead_code)]
+    is_host: bool,
 }
 
 impl NumberGame {
-    pub fn new() -> Self {
-        Self { local_input: String::new() }
+    pub fn new(is_host: bool) -> Self {
+        Self { 
+            local_input: String::new(),
+            is_host,
+        }
     }
 }
 

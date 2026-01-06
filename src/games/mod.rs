@@ -1,35 +1,60 @@
 pub mod pong;
 pub mod rand_num;
 
-use crate::core::engine::Engine;
-use crate::core::network::NetworkManager;
+use std::pin::Pin;
+use anyhow::Result;
 use iroh::endpoint::{SendStream, RecvStream, Connection};
 use ratatui::DefaultTerminal;
-use anyhow::Result;
-use std::collections::HashMap;
 
-// Launcher type alias for readability
-type Launcher = fn(SendStream, RecvStream, Connection, bool, DefaultTerminal) -> 
-    std::pin::Pin<Box<dyn std::future::Future<Output = Result<()>>>>;
+/// Metadata about a game
+#[derive(Clone, Debug)]
+pub struct GameInfo {
+    pub id: &'static str,
+    pub name: &'static str,
+    pub description: &'static str,
+    pub author: &'static str,
+}
 
-pub fn get_registry() -> HashMap<&'static str, Launcher> {
-    let mut m: HashMap<&'static str, Launcher> = HashMap::new();
+/// Game runner function signature
+/// Takes network components and terminal, returns a future that runs the game
+pub type GameRunner = fn(SendStream, RecvStream, Connection, bool, DefaultTerminal) 
+    -> Pin<Box<dyn std::future::Future<Output = Result<()>> + Send>>;
 
-    // Pong Registration
-    m.insert("pong", |s, r, c, h, t| Box::pin(async move {
-        // Pass 'h' (is_host) into PongGame::new()
-        let game = pong::PongGame::new(h); 
-        let network = NetworkManager::new(s, r, c);
-        Engine::new(game, network, h).run(t).await
-    }));
+/// Registry entry containing metadata and runner
+pub struct GameRegistry {
+    pub info: GameInfo,
+    pub runner: GameRunner,
+}
 
-    // Random Number Registration
-    m.insert("rand", |s, r, c, h, t| Box::pin(async move {
-        // Assuming NumberGame::new() also takes is_host based on previous turns
-        let game = rand_num::NumberGame::new(); 
-        let network = NetworkManager::new(s, r, c);
-        Engine::new(game, network, h).run(t).await
-    }));
+/// Get all available games with their metadata and runners
+pub fn get_all_games() -> Vec<GameRegistry> {
+    vec![
+        GameRegistry {
+            info: GameInfo {
+                id: "pong",
+                name: "Pong",
+                description: "Classic Pong game - competitive local multiplayer",
+                author: "LanTerm Team",
+            },
+            runner: |send, recv, conn, is_host, terminal| {
+                Box::pin(pong::run_game(send, recv, conn, is_host, terminal))
+            },
+        },
+        GameRegistry {
+            info: GameInfo {
+                id: "rand_num",
+                name: "Number Guessing",
+                description: "Guess the random number - turn-based strategy game",
+                author: "LanTerm Team",
+            },
+            runner: |send, recv, conn, is_host, terminal| {
+                Box::pin(rand_num::run_game(send, recv, conn, is_host, terminal))
+            },
+        },
+    ]
+}
 
-    m
+/// Get a game by ID
+pub fn get_game(id: &str) -> Option<GameRegistry> {
+    get_all_games().into_iter().find(|g| g.info.id == id)
 }
