@@ -18,6 +18,9 @@ impl<G: Game> Engine<G> {
     }
 
     pub async fn run(mut self, mut terminal: DefaultTerminal) -> Result<()> {
+
+        let my_id = self.network.local_id(); // WHO AM I?
+        let remote_id = self.network.remote_id(); // WHO IS THE OTHER?
         let mut last_tick = Instant::now();
         let mut sequence_counter: u64 = 0;
         let mut last_seen_seq: u64 = 0;
@@ -32,7 +35,7 @@ impl<G: Game> Engine<G> {
             if event::poll(Duration::from_millis(0))? {
                 if let Event::Key(key) = event::read()? {
                     if key.code == KeyCode::Esc { break; }
-                    self.game.handle_input(key, &ctx);
+                    self.game.handle_input(key, &ctx, my_id);
                 }
             }
 
@@ -43,7 +46,7 @@ impl<G: Game> Engine<G> {
                 // 1. LOCAL ACTIONS
                 Some(action) = action_rx.recv() => {
                     if self.is_host {
-                        self.game.handle_action(action, &mut self.state);
+                        self.game.handle_action(action, &mut self.state, remote_id);
                     } else {
                         self.network.send_reliable(InternalMsg::Action(action)).await?;
                     }
@@ -53,7 +56,7 @@ impl<G: Game> Engine<G> {
                 Ok(msg) = self.network.next_reliable() => {
                     if let InternalMsg::Action(a) = msg {
                         if self.is_host {
-                            self.game.handle_action(a, &mut self.state);
+                            self.game.handle_action(a, &mut self.state, remote_id);
                         }
                     }
                 }

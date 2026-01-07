@@ -5,17 +5,19 @@ use iroh::EndpointId;
 const ALPN: &[u8] = b"lanterm-proto";
 
 /// Connect to Iroh and perform the game ID handshake
-/// Returns (send, recv, conn, game_id)
+/// Returns (send, recv, conn, game_id, local_endpoint_id)
 /// For host: game_id is the one they selected
 /// For client: game_id is received from the host
-pub async fn connect_iroh(is_host: bool, ticket_str: Option<String>, game_id: String) -> Result<(SendStream, RecvStream, Connection, String)> {
+pub async fn connect_iroh(is_host: bool, ticket_str: Option<String>, game_id: String) -> Result<(SendStream, RecvStream, Connection, String, EndpointId)> {
     let endpoint = Endpoint::builder()
         .alpns(vec![ALPN.to_vec()])
         .bind()
         .await?;
     
+    let local_id = endpoint.id();
+    
     let connection = if is_host {
-        println!("Your Endpoint ID: {}", endpoint.id());
+        println!("Your Endpoint ID: {}", local_id);
         println!("Waiting for client to connect...");
         let incoming = endpoint.accept().await.ok_or_else(|| anyhow!("Closed"))?;
         let conn = incoming.accept()?.await?;
@@ -54,5 +56,5 @@ pub async fn connect_iroh(is_host: bool, ticket_str: Option<String>, game_id: St
     };
 
     println!("Stream established!");
-    Ok((send, recv, connection, received_game_id))
+    Ok((send, recv, connection, received_game_id, local_id))
 }

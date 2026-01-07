@@ -22,7 +22,7 @@ async fn main() -> Result<()> {
     // 1. LOBBY: Connect to Iroh and perform handshake
     // The handshake is handled at connection level (via datagrams) - clean and simple!
     println!("--- LANTERM LOBBY ---");
-    let (send, recv, conn, discovered_game_id) = lobby::connect_iroh(is_host, peer_id, game_id).await?;
+    let (send, recv, conn, discovered_game_id, local_id) = lobby::connect_iroh(is_host, peer_id, game_id).await?;
     println!("Lobby connection established!");
 
     // 2. Get the game from registry (client now knows which game from handshake)
@@ -35,7 +35,7 @@ async fn main() -> Result<()> {
     let terminal = ratatui::init();
 
     // 4. Call the game's initializer (no more handshake needed - already done!)
-    (game.initializer)(send, recv, conn, is_host, terminal).await?;
+    (game.initializer)(send, recv, conn, is_host, terminal, local_id).await?;
 
     Ok(())
 }

@@ -1,10 +1,12 @@
 pub mod macros;
 pub mod pong;
 pub mod rand_num;
+pub mod battleship;
 
 use std::pin::Pin;
 use anyhow::Result;
 use iroh::endpoint::{SendStream, RecvStream, Connection};
+use iroh::EndpointId;
 use ratatui::DefaultTerminal;
 use crate::register_games;
 
@@ -18,7 +20,7 @@ pub struct GameInfo {
 }
 
 /// Game initializer function - creates and runs the game
-pub type GameInitializer = fn(SendStream, RecvStream, Connection, bool, DefaultTerminal) 
+pub type GameInitializer = fn(SendStream, RecvStream, Connection, bool, DefaultTerminal, EndpointId) 
     -> Pin<Box<dyn std::future::Future<Output = Result<()>> + Send>>;
 
 /// Registry entry containing metadata and initializer
@@ -41,6 +43,13 @@ register_games! {
         id: "rand_num",
         name: "Number Guessing",
         description: "Guess the random number - turn-based strategy game",
+        author: "LanTerm Team"
+    },
+    battleship => {
+        types: (BattleshipGame, BattleAction, BattleState),
+        id: "battleship",
+        name: "Battleship",
+        description: "Strategy naval combat - turn-based P2P",
         author: "LanTerm Team"
     }
 }

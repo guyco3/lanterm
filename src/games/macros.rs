@@ -43,13 +43,13 @@ macro_rules! register_games {
                             description: $desc,
                             author: $author,
                         },
-                        initializer: |send, recv, conn, is_host, terminal| {
+                        initializer: |send, recv, conn, is_host, terminal, local_id| {
                             Box::pin(async move {
                                 use $crate::core::{engine::Engine, network::NetworkManager};
                                 use $crate::core::network::InternalMsg;
                                 use $crate::games::$module::{$game, $action, $state};
                                 
-                                let network = NetworkManager::<InternalMsg<$action, $state>>::new(send, recv, conn);
+                                let network = NetworkManager::<InternalMsg<$action, $state>>::new(send, recv, conn, local_id);
                                 let game = $game::new(is_host);
                                 let engine = Engine::new(game, network, is_host);
                                 engine.run(terminal).await

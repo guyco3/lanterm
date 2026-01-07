@@ -165,32 +165,8 @@ more ideas
 
 Yes, a shared-state/event model simplifies the mental load:
 
-Treat the game as: (a) local input → events, (b) authoritative reducer updates shared state, (c) state snapshots/patches broadcast to all. The terminal just renders the latest state.
-Keep a monotonic state_version (or turn counter). Every event carries the expected previous version; the authority applies in order and bumps the version, then broadcasts the new version plus the delta/result.
-Peers: render from state, send events when allowed. If a peer has an older version, it drops or defers events until it catches up. If it receives a newer snapshot, it replaces its local state.
-Authority choice: simplest is host-authoritative. Full peer-to-peer with vector clocks is possible but adds complexity; start with a single authority.
-Message types: Event (e.g., FireShot/PlaceShip), Result/Delta (resolved outcome), optional periodic StateSnapshot (state + state_version) for resync.
-Rendering: no need to juggle “local terminal vs network”; you just update state and call render(state) each loop.
-Input gating: derive “can I act?” from state (whose turn, phase) rather than booleans like is_host.
 
+things to add
 
-
-
-also, ensure exactly once semantics for delivery becauyse
-
-i guess it makes sense to broadcast and use mono increaing seq number because wheneerv action -> result
-
-A sends action to B, B proresces aciton sends result to A, but A also sends result to irself , so might apply it twice if not careful
-
-
-Yes, a shared-state/event model simplifies the mental load:
-
-Treat the game as: (a) local input → events, (b) authoritative reducer updates shared state, (c) state snapshots/patches broadcast to all. The terminal just renders the latest state.
-Keep a monotonic state_version (or turn counter). Every event carries the expected previous version; the authority applies in order and bumps the version, then broadcasts the new version plus the delta/result.
-Peers: render from state, send events when allowed. If a peer has an older version, it drops or defers events until it catches up. If it receives a newer snapshot, it replaces its local state.
-Authority choice: simplest is host-authoritative. Full peer-to-peer with vector clocks is possible but adds complexity; start with a single authority.
-Message types: Event (e.g., FireShot/PlaceShip), Result/Delta (resolved outcome), optional periodic StateSnapshot (state + state_version) for resync.
-Rendering: no need to juggle “local terminal vs network”; you just update state and call render(state) each loop.
-Input gating: derive “can I act?” from state (whose turn, phase) rather than booleans like is_host.
-
-QUIC (and iroh on top of it) already gives you reliability, ordering, congestion control, and retransmissions, so your current stack is fine. You’ll still want app-level idempotency (seq/turn numbers) to guard against retries/duplicates and to reject out-of-order actions. No need to switch protocols for “retries”; just keep your monotonic seq and idempotent apply logic
+- refactor to move network logic all into on ething
+- add info on who sent what on handlers

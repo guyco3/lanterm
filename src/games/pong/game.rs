@@ -2,6 +2,7 @@ use crate::{Context, Game};
 use ratatui::{widgets::{Paragraph, Block, Borders}, layout::{Rect, Alignment}};
 use serde::{Deserialize, Serialize};
 use crossterm::event::KeyCode;
+use iroh::EndpointId;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum PongAction {
@@ -50,7 +51,7 @@ impl Game for PongGame {
     type Action = PongAction;
     type State = PongState;
 
-    fn handle_input(&mut self, event: crossterm::event::KeyEvent, ctx: &Context<Self::Action>) {
+    fn handle_input(&mut self, event: crossterm::event::KeyEvent, ctx: &Context<Self::Action>, _me: EndpointId) {
         match event.code {
             KeyCode::Up => {
                 if self.is_host {
@@ -70,7 +71,7 @@ impl Game for PongGame {
         }
     }
 
-    fn handle_action(&self, action: Self::Action, state: &mut Self::State) {
+    fn handle_action(&self, action: Self::Action, state: &mut Self::State, _player: EndpointId) {
         match action {
             PongAction::Player1MoveUp => state.paddle1_y = (state.paddle1_y - 1).max(0),
             PongAction::Player1MoveDown => state.paddle1_y = (state.paddle1_y + 1).min(16),

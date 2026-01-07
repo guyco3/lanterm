@@ -1,5 +1,6 @@
 use anyhow::Result;
 use iroh::endpoint::{SendStream, RecvStream, Connection};
+use iroh::EndpointId;
 use serde::{Serialize, Deserialize, de::DeserializeOwned};
 use tokio::io::{AsyncReadExt, AsyncWriteExt}; 
 use std::marker::PhantomData;
@@ -20,15 +21,28 @@ pub struct NetworkManager<M> {
     pub send: SendStream,
     pub recv: RecvStream,
     pub conn: Connection,
+    pub local_endpoint_id: EndpointId,
     _msg_type: PhantomData<M>,
+}
+
+impl<M> NetworkManager<M> {
+    /// Gets our own Endpoint ID
+    pub fn local_id(&self) -> EndpointId {
+        self.local_endpoint_id
+    }
+
+    /// Gets the Endpoint ID of the person on the other side of this connection
+    pub fn remote_id(&self) -> EndpointId {
+        self.conn.remote_id()
+    }
 }
 
 impl<M> NetworkManager<M> 
 where 
     M: Serialize + DeserializeOwned + Send + 'static 
 {
-    pub fn new(send: SendStream, recv: RecvStream, conn: Connection) -> Self {
-        Self { send, recv, conn, _msg_type: PhantomData }
+    pub fn new(send: SendStream, recv: RecvStream, conn: Connection, local_endpoint_id: EndpointId) -> Self {
+        Self { send, recv, conn, local_endpoint_id, _msg_type: PhantomData }
     }
 
     pub async fn send_reliable(&mut self, msg: M) -> Result<()> {

@@ -2,6 +2,7 @@ use crate::{Context, Game};
 use ratatui::widgets::Paragraph;
 use serde::{Deserialize, Serialize};
 use crossterm::event::KeyCode;
+use iroh::EndpointId;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum GuessAction {
@@ -33,7 +34,7 @@ impl Game for NumberGame {
     type Action = GuessAction;
     type State = NumberState;
 
-    fn handle_input(&mut self, event: crossterm::event::KeyEvent, ctx: &Context<Self::Action>) {
+    fn handle_input(&mut self, event: crossterm::event::KeyEvent, ctx: &Context<Self::Action>, _me: EndpointId) {
         match event.code {
             KeyCode::Char(c) if c.is_digit(10) => self.local_input.push(c),
             KeyCode::Backspace => { self.local_input.pop(); },
@@ -47,7 +48,7 @@ impl Game for NumberGame {
         }
     }
 
-    fn handle_action(&self, action: Self::Action, state: &mut Self::State) {
+    fn handle_action(&self, action: Self::Action, state: &mut Self::State, _player: EndpointId) {
         match action {
             GuessAction::Submit(val) => {
                 state.message = format!("Last guess was: {}", val);
