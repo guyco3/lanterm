@@ -188,7 +188,8 @@ impl Menu {
                 KeyCode::Enter => {
                     if !self.input_buffer.is_empty() {
                         let node_id = self.input_buffer.clone();
-                        Some((MenuChoice::Join, "pong".to_string(), Some(JoinConfig { node_id })))
+                        // Game ID will be auto-discovered via handshake protocol
+                        Some((MenuChoice::Join, String::new(), Some(JoinConfig { node_id })))
                     } else {
                         None
                     }

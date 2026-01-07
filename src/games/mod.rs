@@ -1,3 +1,4 @@
+pub mod macros;
 pub mod pong;
 pub mod rand_num;
 
@@ -5,6 +6,7 @@ use std::pin::Pin;
 use anyhow::Result;
 use iroh::endpoint::{SendStream, RecvStream, Connection};
 use ratatui::DefaultTerminal;
+use crate::register_games;
 
 /// Metadata about a game
 #[derive(Clone, Debug)]
@@ -15,46 +17,30 @@ pub struct GameInfo {
     pub author: &'static str,
 }
 
-/// Game runner function signature
-/// Takes network components and terminal, returns a future that runs the game
-pub type GameRunner = fn(SendStream, RecvStream, Connection, bool, DefaultTerminal) 
+/// Game initializer function - creates and runs the game
+pub type GameInitializer = fn(SendStream, RecvStream, Connection, bool, DefaultTerminal) 
     -> Pin<Box<dyn std::future::Future<Output = Result<()>> + Send>>;
 
-/// Registry entry containing metadata and runner
+/// Registry entry containing metadata and initializer
 pub struct GameRegistry {
     pub info: GameInfo,
-    pub runner: GameRunner,
+    pub initializer: GameInitializer,
 }
 
-/// Get all available games with their metadata and runners
-pub fn get_all_games() -> Vec<GameRegistry> {
-    vec![
-        GameRegistry {
-            info: GameInfo {
-                id: "pong",
-                name: "Pong",
-                description: "Classic Pong game - competitive local multiplayer",
-                author: "LanTerm Team",
-            },
-            runner: |send, recv, conn, is_host, terminal| {
-                Box::pin(pong::run_game(send, recv, conn, is_host, terminal))
-            },
-        },
-        GameRegistry {
-            info: GameInfo {
-                id: "rand_num",
-                name: "Number Guessing",
-                description: "Guess the random number - turn-based strategy game",
-                author: "LanTerm Team",
-            },
-            runner: |send, recv, conn, is_host, terminal| {
-                Box::pin(rand_num::run_game(send, recv, conn, is_host, terminal))
-            },
-        },
-    ]
-}
-
-/// Get a game by ID
-pub fn get_game(id: &str) -> Option<GameRegistry> {
-    get_all_games().into_iter().find(|g| g.info.id == id)
+// Register all games here - developers only need to add a new entry
+register_games! {
+    pong => {
+        types: (PongGame, PongAction, PongState),
+        id: "pong",
+        name: "Pong",
+        description: "Classic Pong game - competitive local multiplayer",
+        author: "LanTerm Team"
+    },
+    rand_num => {
+        types: (NumberGame, GuessAction, NumberState),
+        id: "rand_num",
+        name: "Number Guessing",
+        description: "Guess the random number - turn-based strategy game",
+        author: "LanTerm Team"
+    }
 }

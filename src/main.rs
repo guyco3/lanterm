@@ -19,19 +19,23 @@ async fn main() -> Result<()> {
     // Get peer_id if joining
     let peer_id = join_config.as_ref().map(|c| c.node_id.clone());
 
-    // 1. LOBBY: Connect to Iroh
+    // 1. LOBBY: Connect to Iroh and perform handshake
+    // The handshake is handled at connection level (via datagrams) - clean and simple!
     println!("--- LANTERM LOBBY ---");
-    let (send, recv, conn) = lobby::connect_iroh(is_host, peer_id).await?;
+    let (send, recv, conn, discovered_game_id) = lobby::connect_iroh(is_host, peer_id, game_id).await?;
+    println!("Lobby connection established!");
 
-    // 2. Get the game from registry
-    let game = lanterm::games::get_game(&game_id)
-        .ok_or_else(|| anyhow::anyhow!("Game '{}' not found", game_id))?;
+    // 2. Get the game from registry (client now knows which game from handshake)
+    let game = lanterm::games::get_game(&discovered_game_id)
+        .ok_or_else(|| anyhow::anyhow!("Game '{}' not found", discovered_game_id))?;
+
+    println!("Starting game: {}", game.info.name);
 
     // 3. Initialize terminal for game rendering
     let terminal = ratatui::init();
 
-    // 4. Run the game (type information handled inside game module)
-    (game.runner)(send, recv, conn, is_host, terminal).await?;
+    // 4. Call the game's initializer (no more handshake needed - already done!)
+    (game.initializer)(send, recv, conn, is_host, terminal).await?;
 
     Ok(())
 }
