@@ -2,12 +2,13 @@ pub mod macros;
 pub mod pong;
 pub mod rand_num;
 pub mod battleship;
+pub mod poker;
 
+use std::future::Future;
 use std::pin::Pin;
 use anyhow::Result;
-use iroh::endpoint::{SendStream, RecvStream, Connection};
-use iroh::EndpointId;
 use ratatui::DefaultTerminal;
+use crate::core::network::{InLobby, NetworkManager};
 use crate::register_games;
 
 /// Metadata about a game
@@ -19,9 +20,9 @@ pub struct GameInfo {
     pub author: &'static str,
 }
 
-/// Game initializer function - creates and runs the game
-pub type GameInitializer = fn(SendStream, RecvStream, Connection, bool, DefaultTerminal, EndpointId) 
-    -> Pin<Box<dyn std::future::Future<Output = Result<()>> + Send>>;
+/// Game initializer function - creates and runs the game, returning the lobby-ready manager
+pub type GameInitializer = for<'a> fn(NetworkManager<InLobby>, bool, &'a mut DefaultTerminal)
+    -> Pin<Box<dyn Future<Output = Result<NetworkManager<InLobby>>> + Send + 'a>>;
 
 /// Registry entry containing metadata and initializer
 pub struct GameRegistry {
@@ -50,6 +51,13 @@ register_games! {
         id: "battleship",
         name: "Battleship",
         description: "Strategy naval combat - turn-based P2P",
+        author: "LanTerm Team"
+    },
+    poker => {
+        types: (PokerGame, PokerAction, PokerState),
+        id: "poker",
+        name: "Texas Hold'em",
+        description: "N-player P2P Poker. Bluffs, bets, and cards.",
         author: "LanTerm Team"
     }
 }

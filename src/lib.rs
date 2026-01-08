@@ -1,7 +1,6 @@
 pub mod core {
 	pub mod engine;
 	pub mod network;
-	pub mod lobby;
 	pub mod game;
 	pub mod menu;
 }

@@ -60,12 +60,11 @@ impl Default for BattleState {
 
 pub struct BattleshipGame {
     is_host: bool,
+    my_id: EndpointId,
 }
 
 impl BattleshipGame {
-    pub fn new(is_host: bool) -> Self {
-        Self { is_host }
-    }
+    pub fn new(is_host: bool, my_id: EndpointId) -> Self { Self { is_host, my_id } }
 }
 
 impl Game for BattleshipGame {

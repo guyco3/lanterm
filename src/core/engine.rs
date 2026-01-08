@@ -1,4 +1,4 @@
-use crate::core::network::{NetworkManager, InternalMsg, SyncPacket};
+use crate::core::network::{Active, InternalMsg, NetworkManager, SyncPacket};
 use crate::{Context, Game};
 use anyhow::Result;
 use ratatui::DefaultTerminal;
@@ -7,17 +7,17 @@ use crossterm::event::{self, Event, KeyCode};
 
 pub struct Engine<G: Game> {
     game: G,
-    network: NetworkManager<InternalMsg<G::Action, G::State>>,
+    network: NetworkManager<Active<InternalMsg<G::Action, G::State>>>,
     is_host: bool,
     state: G::State,
 }
 
 impl<G: Game> Engine<G> {
-    pub fn new(game: G, network: NetworkManager<InternalMsg<G::Action, G::State>>, is_host: bool) -> Self {
+    pub fn new(game: G, network: NetworkManager<Active<InternalMsg<G::Action, G::State>>>, is_host: bool) -> Self {
         Self { game, network, is_host, state: G::State::default() }
     }
 
-    pub async fn run(mut self, mut terminal: DefaultTerminal) -> Result<()> {
+    pub async fn run(mut self, terminal: &mut DefaultTerminal) -> Result<NetworkManager<Active<InternalMsg<G::Action, G::State>>>> {
 
         let my_id = self.network.local_id(); // WHO AM I?
         let remote_id = self.network.remote_id(); // WHO IS THE OTHER?
@@ -40,19 +40,17 @@ impl<G: Game> Engine<G> {
             }
 
             let tick_rate = self.game.tick_rate().unwrap_or(Duration::from_millis(16));
-            let conn = self.network.conn.clone();
+            let conn = self.network.conn_clone();
 
             tokio::select! {
-                // 1. LOCAL ACTIONS
                 Some(action) = action_rx.recv() => {
                     if self.is_host {
-                        self.game.handle_action(action, &mut self.state, remote_id);
+                        self.game.handle_action(action, &mut self.state, my_id);
                     } else {
                         self.network.send_reliable(InternalMsg::Action(action)).await?;
                     }
                 }
 
-                // 2. RELIABLE INBOUND (Host receives actions)
                 Ok(msg) = self.network.next_reliable() => {
                     if let InternalMsg::Action(a) = msg {
                         if self.is_host {
@@ -61,8 +59,7 @@ impl<G: Game> Engine<G> {
                     }
                 }
 
-                // 3. UNRELIABLE INBOUND (Client receives state syncs)
-                Ok(msg) = async move {
+                Ok(msg) = async {
                     let bytes = conn.read_datagram().await?;
                     let msg = postcard::from_bytes(&bytes)?;
                     Ok::<InternalMsg<G::Action, G::State>, anyhow::Error>(msg)
@@ -75,7 +72,6 @@ impl<G: Game> Engine<G> {
                     }
                 }
 
-                // 4. HEARTBEAT & BROADCAST
                 _ = tokio::time::sleep(tick_rate) => {
                     let dt = last_tick.elapsed().as_millis() as u32;
                     last_tick = Instant::now();
@@ -93,7 +89,6 @@ impl<G: Game> Engine<G> {
                 }
             }
         }
-        ratatui::restore();
-        Ok(())
+        Ok(self.network)
     }
 }

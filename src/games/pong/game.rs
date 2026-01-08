@@ -39,12 +39,11 @@ impl Default for PongState {
 
 pub struct PongGame {
     is_host: bool,
+    my_id: EndpointId,
 }
 
 impl PongGame {
-    pub fn new(is_host: bool) -> Self {
-        Self { is_host }
-    }
+    pub fn new(is_host: bool, my_id: EndpointId) -> Self { Self { is_host, my_id } }
 }
 
 impl Game for PongGame {

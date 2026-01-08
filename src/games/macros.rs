@@ -43,16 +43,23 @@ macro_rules! register_games {
                             description: $desc,
                             author: $author,
                         },
-                        initializer: |send, recv, conn, is_host, terminal, local_id| {
+                        initializer: |net_lobby, is_host, terminal| {
                             Box::pin(async move {
-                                use $crate::core::{engine::Engine, network::NetworkManager};
+                                use $crate::core::engine::Engine;
                                 use $crate::core::network::InternalMsg;
                                 use $crate::games::$module::{$game, $action, $state};
-                                
-                                let network = NetworkManager::<InternalMsg<$action, $state>>::new(send, recv, conn, local_id);
-                                let game = $game::new(is_host);
-                                let engine = Engine::new(game, network, is_host);
-                                engine.run(terminal).await
+
+                                // Fetch local id from lobby manager and pass into the game constructor
+                                let my_id = net_lobby.local_id();
+
+                                // Upgrade to typed active manager
+                                let typed_net = net_lobby.upgrade::<InternalMsg<$action, $state>>();
+
+                                // Initialize game with host flag and local endpoint id
+                                let game = $game::new(is_host, my_id);
+                                let engine = Engine::new(game, typed_net, is_host);
+                                let finished_net = engine.run(terminal).await?;
+                                Ok(finished_net.reset())
                             })
                         },
                     }

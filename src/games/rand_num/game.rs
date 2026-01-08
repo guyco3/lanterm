@@ -19,13 +19,16 @@ pub struct NumberGame {
     local_input: String,
     #[allow(dead_code)]
     is_host: bool,
+    #[allow(dead_code)]
+    my_id: EndpointId,
 }
 
 impl NumberGame {
-    pub fn new(is_host: bool) -> Self {
+    pub fn new(is_host: bool, my_id: EndpointId) -> Self {
         Self { 
             local_input: String::new(),
             is_host,
+            my_id,
         }
     }
 }
